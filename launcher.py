@@ -65,6 +65,25 @@ log = logging.getLogger("launcher")
 
 APP_VERSION = read_version()
 
+# Windows: prevent console windows when spawning subprocesses from the GUI app.
+_SUBPROCESS_NO_WINDOW = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if IS_WINDOWS else 0
+)
+
+
+def _hidden_run(command, **kwargs):
+    if _SUBPROCESS_NO_WINDOW:
+        kwargs = dict(kwargs)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | _SUBPROCESS_NO_WINDOW
+    return subprocess.run(command, **kwargs)
+
+
+def _hidden_popen(command, **kwargs):
+    if _SUBPROCESS_NO_WINDOW:
+        kwargs = dict(kwargs)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | _SUBPROCESS_NO_WINDOW
+    return subprocess.Popen(command, **kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Embedded Python
@@ -225,16 +244,17 @@ def _commit_synced_files() -> None:
     """Commit sync'd safety files so git reset --hard doesn't revert them."""
     try:
         for rel in ["ouroboros/safety.py", "prompts/SAFETY.md", "ouroboros/tools/registry.py"]:
-            subprocess.run(["git", "add", rel], cwd=str(REPO_DIR),
-                           check=False, capture_output=True)
-        status = subprocess.run(["git", "status", "--porcelain", "--",
-                                 "ouroboros/safety.py", "prompts/SAFETY.md",
-                                 "ouroboros/tools/registry.py"],
-                                cwd=str(REPO_DIR), capture_output=True, text=True)
+            _hidden_run(["git", "add", rel], cwd=str(REPO_DIR), check=False, capture_output=True)
+        status = _hidden_run(
+            ["git", "status", "--porcelain", "--",
+             "ouroboros/safety.py", "prompts/SAFETY.md", "ouroboros/tools/registry.py"],
+            cwd=str(REPO_DIR), capture_output=True, text=True,
+        )
         if status.stdout.strip():
-            subprocess.run(["git", "commit", "-m",
-                            "safety-sync: restore protected files from bundle"],
-                           cwd=str(REPO_DIR), check=False, capture_output=True)
+            _hidden_run(
+                ["git", "commit", "-m", "safety-sync: restore protected files from bundle"],
+                cwd=str(REPO_DIR), check=False, capture_output=True,
+            )
             log.info("Committed synced safety files.")
     except Exception as e:
         log.warning("Failed to commit synced files: %s", e)
@@ -328,13 +348,13 @@ def bootstrap_repo() -> None:
     if needs_full_bootstrap:
         _ensure_repo_gitignore(REPO_DIR)
         try:
-            subprocess.run(["git", "init"], cwd=str(REPO_DIR), check=True, capture_output=True)
-            subprocess.run(["git", "config", "user.name", "Ouroboros"], cwd=str(REPO_DIR), check=True, capture_output=True)
-            subprocess.run(["git", "config", "user.email", "ouroboros@localhost"], cwd=str(REPO_DIR), check=True, capture_output=True)
-            subprocess.run(["git", "add", "-A"], cwd=str(REPO_DIR), check=True, capture_output=True)
-            subprocess.run(["git", "commit", "-m", "Initial commit from app bundle"], cwd=str(REPO_DIR), check=False, capture_output=True)
-            subprocess.run(["git", "branch", "-M", "ouroboros"], cwd=str(REPO_DIR), check=False, capture_output=True)
-            subprocess.run(["git", "branch", "ouroboros-stable"], cwd=str(REPO_DIR), check=False, capture_output=True)
+            _hidden_run(["git", "init"], cwd=str(REPO_DIR), check=True, capture_output=True)
+            _hidden_run(["git", "config", "user.name", "Ouroboros"], cwd=str(REPO_DIR), check=True, capture_output=True)
+            _hidden_run(["git", "config", "user.email", "ouroboros@localhost"], cwd=str(REPO_DIR), check=True, capture_output=True)
+            _hidden_run(["git", "add", "-A"], cwd=str(REPO_DIR), check=True, capture_output=True)
+            _hidden_run(["git", "commit", "-m", "Initial commit from app bundle"], cwd=str(REPO_DIR), check=False, capture_output=True)
+            _hidden_run(["git", "branch", "-M", "ouroboros"], cwd=str(REPO_DIR), check=False, capture_output=True)
+            _hidden_run(["git", "branch", "ouroboros-stable"], cwd=str(REPO_DIR), check=False, capture_output=True)
         except Exception as e:
             log.error("Git init failed: %s", e)
 
@@ -346,7 +366,7 @@ def bootstrap_repo() -> None:
         if not world_path.exists():
             env = os.environ.copy()
             env["PYTHONPATH"] = str(REPO_DIR)
-            subprocess.run(
+            _hidden_run(
                 [EMBEDDED_PYTHON, "-c",
                  f"import sys; sys.path.insert(0, '{REPO_DIR}'); "
                  f"from ouroboros.world_profiler import generate_world_profile; "
@@ -414,7 +434,7 @@ def _install_deps() -> None:
         return
     log.info("Installing agent dependencies...")
     try:
-        subprocess.run(
+        _hidden_run(
             [EMBEDDED_PYTHON, "-m", "pip", "install", "-q", "-r", str(req_file)],
             timeout=300, capture_output=True,
         )
@@ -462,7 +482,7 @@ def start_agent(port: int = AGENT_SERVER_PORT) -> subprocess.Popen:
             subprocess.CREATE_NEW_PROCESS_GROUP | _CREATE_SUSPENDED
         )
 
-    proc = subprocess.Popen([EMBEDDED_PYTHON, str(server_py)], **popen_kwargs)
+    proc = _hidden_popen([EMBEDDED_PYTHON, str(server_py)], **popen_kwargs)
     _agent_proc = proc
 
     if IS_WINDOWS:
@@ -878,14 +898,14 @@ def main():
         class GitApi:
             def install_git(self):
                 if IS_MACOS:
-                    subprocess.Popen(["xcode-select", "--install"])
+                    _hidden_popen(["xcode-select", "--install"])
                 elif IS_WINDOWS:
-                    subprocess.Popen(["winget", "install", "Git.Git", "--source", "winget", "--accept-source-agreements"])
+                    _hidden_popen(["winget", "install", "Git.Git", "--source", "winget", "--accept-source-agreements"])
                 else:
                     for cmd in [["sudo", "apt", "install", "-y", "git"],
                                 ["sudo", "dnf", "install", "-y", "git"]]:
                         try:
-                            subprocess.Popen(cmd)
+                            _hidden_popen(cmd)
                             break
                         except FileNotFoundError:
                             continue

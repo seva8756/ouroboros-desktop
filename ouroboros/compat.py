@@ -26,6 +26,16 @@ IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
 
 PATH_SEP = ";" if IS_WINDOWS else ":"
+_SUBPROCESS_NO_WINDOW = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if IS_WINDOWS else 0
+)
+
+
+def _hidden_run(command: list[str], **kwargs):
+    if _SUBPROCESS_NO_WINDOW:
+        kwargs = dict(kwargs)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | _SUBPROCESS_NO_WINDOW
+    return subprocess.run(command, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +97,7 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
     """Force-kill a subprocess and its entire process tree."""
     if IS_WINDOWS:
         try:
-            subprocess.run(
+            _hidden_run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True, timeout=10,
             )
@@ -117,7 +127,7 @@ def force_kill_pid(pid: int) -> None:
     """Force-kill a single process by PID."""
     if IS_WINDOWS:
         try:
-            subprocess.run(
+            _hidden_run(
                 ["taskkill", "/F", "/PID", str(pid)],
                 capture_output=True, timeout=10,
             )
@@ -134,7 +144,7 @@ def kill_process_on_port(port: int) -> None:
     """Kill any process listening on the given TCP port."""
     try:
         if IS_WINDOWS:
-            res = subprocess.run(
+            res = _hidden_run(
                 ["netstat", "-ano"],
                 capture_output=True, text=True, timeout=5,
             )
@@ -145,7 +155,7 @@ def kill_process_on_port(port: int) -> None:
                         try:
                             pid = int(parts[-1])
                             if pid != os.getpid():
-                                subprocess.run(
+                                _hidden_run(
                                     ["taskkill", "/F", "/PID", str(pid)],
                                     capture_output=True,
                                 )
@@ -239,10 +249,10 @@ def get_system_memory() -> str:
             ).strip().decode()
             return out
         elif os_name == "Windows":
-            out = subprocess.check_output(
+            out = _hidden_run(
                 ["wmic", "ComputerSystem", "get", "TotalPhysicalMemory", "/value"],
-                text=True, timeout=10,
-            ).strip()
+                capture_output=True, text=True, timeout=10, check=True,
+            ).stdout.strip()
             for line in out.splitlines():
                 if "=" in line:
                     mem_bytes = int(line.split("=")[1])
@@ -261,10 +271,10 @@ def get_cpu_info() -> str:
                 ["sysctl", "-n", "machdep.cpu.brand_string"],
             ).strip().decode()
         elif os_name == "Windows":
-            out = subprocess.check_output(
+            out = _hidden_run(
                 ["wmic", "cpu", "get", "Name", "/value"],
-                text=True, timeout=10,
-            ).strip()
+                capture_output=True, text=True, timeout=10, check=True,
+            ).stdout.strip()
             for line in out.splitlines():
                 if "=" in line:
                     return line.split("=", 1)[1].strip()

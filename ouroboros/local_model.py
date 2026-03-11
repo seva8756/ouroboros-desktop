@@ -21,6 +21,18 @@ log = logging.getLogger(__name__)
 
 _LOCAL_MODEL_DEFAULT_PORT = 8766
 
+# Windows: prevent console windows when spawning subprocesses from the GUI app.
+_SUBPROCESS_NO_WINDOW = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+)
+
+
+def _with_hidden_subprocess(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    if _SUBPROCESS_NO_WINDOW:
+        kwargs = dict(kwargs)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | _SUBPROCESS_NO_WINDOW
+    return kwargs
+
 # Global singleton — one local model server at a time
 _manager: Optional[LocalModelManager] = None
 _manager_lock = threading.Lock()
@@ -47,6 +59,7 @@ class LocalModelManager:
         self._context_length: int = 0
         self._model_name: str = ""
         self._download_progress: float = 0.0
+        self._stderr_buf: bytes = b""
 
     # ------------------------------------------------------------------
     # Properties
@@ -180,29 +193,75 @@ class LocalModelManager:
             log.info("Starting local model server: %s", " ".join(cmd))
 
             try:
+                probe = subprocess.run(
+                    [python, "-c", "import llama_cpp"],
+                    **_with_hidden_subprocess({
+                        "capture_output": True,
+                        "text": True,
+                        "timeout": 15,
+                    }),
+                )
+            except Exception as exc:
+                self._status = "error"
+                self._error = f"Failed to verify llama-cpp-python installation: {exc}"
+                raise RuntimeError(self._error) from exc
+            if probe.returncode != 0:
+                self._status = "error"
+                details = (probe.stderr or probe.stdout or "").strip()
+                if IS_MACOS:
+                    hint = 'CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python[server]'
+                else:
+                    hint = "pip install llama-cpp-python[server]"
+                self._error = f"llama-cpp-python is not installed or failed to import. Install with: {hint}"
+                if details:
+                    self._error += f": {details[-500:]}"
+                raise RuntimeError(self._error)
+
+            try:
                 _popen_kwargs = dict(
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     stdin=subprocess.DEVNULL,
                 )
                 if sys.platform == "win32":
                     _popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
                 else:
                     _popen_kwargs["start_new_session"] = True
-                self._proc = subprocess.Popen(cmd, **_popen_kwargs)
+                self._proc = subprocess.Popen(cmd, **_with_hidden_subprocess(_popen_kwargs))
             except FileNotFoundError:
                 self._status = "error"
-                if IS_MACOS:
-                    hint = 'CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python[server]'
-                else:
-                    hint = "pip install llama-cpp-python[server]"
-                self._error = f"llama-cpp-python not found. Install with:\n{hint}"
+                self._error = "Python executable not found. Cannot start local model server."
                 raise RuntimeError(self._error)
+
+            self._stderr_buf = b""
+            threading.Thread(
+                target=self._drain_stderr, daemon=True, name="local-model-stderr"
+            ).start()
 
         # Wait for server to become healthy in a background thread
         threading.Thread(
             target=self._wait_for_healthy, daemon=True, name="local-model-health"
         ).start()
+
+    def _drain_stderr(self) -> None:
+        """Continuously read stderr to prevent pipe buffer deadlock.
+
+        Keeps the last 2 KB in self._stderr_buf for error diagnostics.
+        """
+        proc = self._proc
+        if proc is None or proc.stderr is None:
+            return
+        buf = b""
+        try:
+            fd = proc.stderr.fileno()
+            while True:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                buf = (buf + chunk)[-2048:]
+        except Exception:
+            pass
+        self._stderr_buf = buf
 
     def _wait_for_healthy(self, timeout: float = 300.0) -> None:
         """Poll the server until it responds or times out."""
@@ -211,7 +270,16 @@ class LocalModelManager:
             if self._proc is None or self._proc.poll() is not None:
                 self._status = "error"
                 rc = self._proc.returncode if self._proc else "?"
+                stderr_tail = ""
+                if self._stderr_buf:
+                    try:
+                        stderr_tail = self._stderr_buf.decode("utf-8", errors="replace")[-500:]
+                    except Exception:
+                        pass
                 self._error = f"Server process exited during startup (code {rc})"
+                if stderr_tail:
+                    self._error += f": {stderr_tail}"
+                self._proc = None
                 return
             try:
                 health = self.health_check()
@@ -241,6 +309,7 @@ class LocalModelManager:
             self._error = None
             self._context_length = 0
             self._model_name = ""
+            self._stderr_buf = b""
 
         if proc is None:
             return
