@@ -73,17 +73,20 @@ export function initChat({ ws, state, updateUnreadBadge }) {
     }
 
     const pendingUserBubbles = new Map();
+    let welcomeShown = false;
 
     function addMessage(text, role, markdown = false, timestamp = null, isProgress = false, opts = {}) {
         const pending = !!opts.pending;
+        const ephemeral = !!opts.ephemeral;
         const clientMessageId = opts.clientMessageId || '';
         const ts = timestamp || new Date().toISOString();
         const assistantKey = role === 'assistant' ? buildAssistantKey(text, ts, isProgress) : '';
         if (assistantKey && seenAssistantKeys.has(assistantKey)) return null;
-        if (!isProgress) _chatHistory.push({ text, role, ts, markdown: !!markdown });
+        if (!isProgress && !ephemeral) _chatHistory.push({ text, role, ts, markdown: !!markdown });
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${role}` + (isProgress ? ' progress' : '');
         if (pending) bubble.classList.add('pending');
+        if (ephemeral) bubble.dataset.ephemeral = '1';
         if (clientMessageId) bubble.dataset.clientMessageId = clientMessageId;
         const sender = role === 'user' ? 'You' : (isProgress ? '\uD83D\uDCAC Ouroboros' : 'Ouroboros');
         const rendered = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
@@ -105,10 +108,22 @@ export function initChat({ ws, state, updateUnreadBadge }) {
             messagesDiv.appendChild(bubble);
         }
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        try { sessionStorage.setItem('ouro_chat', JSON.stringify(_chatHistory.slice(-200))); } catch {}
+        if (!ephemeral) {
+            try { sessionStorage.setItem('ouro_chat', JSON.stringify(_chatHistory.slice(-200))); } catch {}
+        }
         rememberAssistantKey(assistantKey);
         if (pending && clientMessageId) pendingUserBubbles.set(clientMessageId, bubble);
         return bubble;
+    }
+
+    function ensureWelcomeMessage() {
+        if (welcomeShown) return;
+        const hasRealBubbles = Array.from(messagesDiv.querySelectorAll('.chat-bubble')).some(
+            bubble => !bubble.classList.contains('typing-bubble')
+        );
+        if (hasRealBubbles) return;
+        welcomeShown = true;
+        addMessage('Ouroboros has awakened', 'assistant', false, null, false, { ephemeral: true });
     }
 
     async function syncHistory({ includeUser = false } = {}) {
@@ -144,6 +159,7 @@ export function initChat({ ws, state, updateUnreadBadge }) {
             for (const msg of saved) addMessage(msg.text, msg.role, !!msg.markdown, msg.ts || null);
         } catch {}
         historyLoaded = true;
+        ensureWelcomeMessage();
     })();
 
     function sendMessage() {
@@ -249,7 +265,11 @@ export function initChat({ ws, state, updateUnreadBadge }) {
     ws.on('open', () => {
         document.getElementById('chat-status').className = 'status-badge online';
         document.getElementById('chat-status').textContent = 'Online';
-        syncHistory({ includeUser: !historyLoaded }).catch(() => {});
+        syncHistory({ includeUser: !historyLoaded })
+            .then((hasMessages) => {
+                if (!hasMessages) ensureWelcomeMessage();
+            })
+            .catch(() => {});
     });
     ws.on('close', () => {
         hideTyping();

@@ -345,7 +345,7 @@ def _run_supervisor(settings: dict) -> None:
                     status = status_text(WORKERS, PENDING, RUNNING, soft_timeout, hard_timeout)
                     send_with_budget(chat_id, status, force_budget=True)
                 else:
-                    _consciousness.inject_observation(f"Owner message: {text[:100]}")
+                    _consciousness.inject_observation(f"Owner message: {text}")
                     agent = _get_chat_agent()
                     if agent._busy:
                         agent.inject_message(text)
