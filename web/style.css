@@ -26,17 +26,21 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html {
+    height: 100%;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
 }
 
 #app {
     display: flex;
-    height: 100vh;
+    height: 100%;
     position: relative;
 }
 
