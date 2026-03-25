@@ -1,4 +1,5 @@
 import { escapeHtml, renderMarkdown } from './utils.js';
+import { apiUrl } from './path.js';
 
 export function initChat({ ws, state, updateUnreadBadge }) {
     const container = document.getElementById('content');
@@ -143,7 +144,7 @@ export function initChat({ ws, state, updateUnreadBadge }) {
         if (historySyncPromise) return historySyncPromise;
         historySyncPromise = (async () => {
             try {
-                const resp = await fetch('/api/chat/history?limit=1000', { cache: 'no-store' });
+                const resp = await fetch(apiUrl('/api/chat/history?limit=1000'), { cache: 'no-store' });
                 if (!resp.ok) return false;
                 const data = await resp.json();
                 const messages = Array.isArray(data.messages) ? data.messages : [];

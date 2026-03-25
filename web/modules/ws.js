@@ -1,3 +1,5 @@
+import { apiUrl, wsUrl } from './path.js';
+
 /**
  * WebSocket Manager module.
  *
@@ -74,7 +76,7 @@ export class WS {
     }
 
     _refreshStateAfterOpen(previouslyConnected) {
-        fetch('/api/state', { cache: 'no-store' }).then(r => r.json()).then(d => {
+        fetch(apiUrl('/api/state'), { cache: 'no-store' }).then(r => r.json()).then(d => {
             if (previouslyConnected && this._lastSha && d.sha && d.sha !== this._lastSha) {
                 location.reload();
                 return;
@@ -197,6 +199,5 @@ export class WS {
 }
 
 export function createWS() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return new WS(() => `${proto}//${location.host}/ws`);
+    return new WS(() => wsUrl('/ws'));
 }

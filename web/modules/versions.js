@@ -1,4 +1,5 @@
 import { escapeHtml } from './utils.js';
+import { apiUrl } from './path.js';
 
 export function initVersions({ ws, state }) {
     const page = document.createElement('div');
@@ -50,7 +51,7 @@ export function initVersions({ ws, state }) {
 
     async function loadVersions() {
         try {
-            const resp = await fetch('/api/git/log');
+            const resp = await fetch(apiUrl('/api/git/log'));
             const data = await resp.json();
             currentDiv.textContent = `Branch: ${data.branch || '?'} @ ${data.sha || '?'}`;
 
@@ -73,7 +74,7 @@ export function initVersions({ ws, state }) {
     async function rollback(target) {
         if (!confirm(`Roll back to ${target}?\n\nA rescue snapshot of the current state will be saved. The server will restart.`)) return;
         try {
-            const resp = await fetch('/api/git/rollback', {
+            const resp = await fetch(apiUrl('/api/git/rollback'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target }),
@@ -92,7 +93,7 @@ export function initVersions({ ws, state }) {
     document.getElementById('btn-promote').addEventListener('click', async () => {
         if (!confirm('Promote current ouroboros branch to ouroboros-stable?')) return;
         try {
-            const resp = await fetch('/api/git/promote', { method: 'POST' });
+            const resp = await fetch(apiUrl('/api/git/promote'), { method: 'POST' });
             const data = await resp.json();
             alert(data.status === 'ok' ? data.message : 'Error: ' + (data.error || 'unknown'));
         } catch (e) {

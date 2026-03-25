@@ -1,3 +1,5 @@
+import { apiUrl } from './path.js';
+
 /**
  * Utility functions shared across modules.
  */
@@ -60,7 +62,7 @@ export function formatDualVersion(data) {
 
 export async function loadVersion() {
     try {
-        const resp = await fetch('/api/health');
+        const resp = await fetch(apiUrl('/api/health'));
         const data = await resp.json();
         document.getElementById('nav-version').textContent = formatDualVersion(data);
         const dashTitle = document.getElementById('dash-title');

@@ -1,3 +1,5 @@
+import { apiUrl } from './path.js';
+
 export function initDashboard({ ws, state }) {
     const page = document.createElement('div');
     page.id = 'page-dashboard';
@@ -69,7 +71,7 @@ export function initDashboard({ ws, state }) {
     // Poll dashboard state
     async function updateDashboard() {
         try {
-            const resp = await fetch('/api/state');
+            const resp = await fetch(apiUrl('/api/state'));
             const data = await resp.json();
             const uptime = data.uptime || 0;
             const h = Math.floor(uptime / 3600);

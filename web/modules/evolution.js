@@ -1,3 +1,5 @@
+import { apiUrl } from './path.js';
+
 export function initEvolution({ ws, state }) {
     const page = document.createElement('div');
     page.id = 'page-evolution';
@@ -40,7 +42,7 @@ export function initEvolution({ ws, state }) {
     async function loadEvolution() {
         const badge = document.getElementById('evo-status');
         try {
-            const resp = await fetch('/api/evolution-data');
+            const resp = await fetch(apiUrl('/api/evolution-data'));
             if (!resp.ok) throw new Error('API error ' + resp.status);
             const data = await resp.json();
             const points = data.points || [];

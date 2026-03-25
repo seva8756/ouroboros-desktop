@@ -1,3 +1,5 @@
+import { apiUrl } from './path.js';
+
 export function initSettings({ ws, state }) {
     const page = document.createElement('div');
     page.id = 'page-settings';
@@ -207,7 +209,7 @@ export function initSettings({ ws, state }) {
     }
 
     async function loadSettings() {
-        const resp = await fetch('/api/settings');
+        const resp = await fetch(apiUrl('/api/settings'));
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
         applySettings(data);
@@ -218,7 +220,7 @@ export function initSettings({ ws, state }) {
     let localStatusInterval = null;
     function updateLocalStatus() {
         if (state.activePage !== 'settings') return; // Don't poll if page is hidden
-        fetch('/api/local-model/status').then(r => r.json()).then(d => {
+        fetch(apiUrl('/api/local-model/status')).then(r => r.json()).then(d => {
             const el = document.getElementById('local-model-status');
             const isReady = d.status === 'ready';
             let text = 'Status: ' + (d.status || 'offline').charAt(0).toUpperCase() + (d.status || 'offline').slice(1);
@@ -257,7 +259,7 @@ export function initSettings({ ws, state }) {
             chat_format: document.getElementById('s-local-chat-format').value.trim(),
         };
         try {
-            const resp = await fetch('/api/local-model/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const resp = await fetch(apiUrl('/api/local-model/start'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const data = await resp.json();
             if (data.error) alert('Error: ' + data.error);
             else updateLocalStatus();
@@ -266,7 +268,7 @@ export function initSettings({ ws, state }) {
 
     document.getElementById('btn-local-stop').addEventListener('click', async () => {
         try {
-            await fetch('/api/local-model/stop', { method: 'POST' });
+            await fetch(apiUrl('/api/local-model/stop'), { method: 'POST' });
             updateLocalStatus();
         } catch (e) { alert('Failed: ' + e.message); }
     });
@@ -277,7 +279,7 @@ export function initSettings({ ws, state }) {
         el.textContent = 'Running tests...';
         el.style.color = 'var(--text-muted)';
         try {
-            const resp = await fetch('/api/local-model/test', { method: 'POST' });
+            const resp = await fetch(apiUrl('/api/local-model/test'), { method: 'POST' });
             const r = await resp.json();
             if (r.error) { el.textContent = 'Error: ' + r.error; el.style.color = 'var(--red)'; return; }
             let lines = [];
@@ -330,7 +332,7 @@ export function initSettings({ ws, state }) {
         if (ghToken && !ghToken.includes('...')) body.GITHUB_TOKEN = ghToken;
 
         try {
-            const resp = await fetch('/api/settings', {
+            const resp = await fetch(apiUrl('/api/settings'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -353,7 +355,7 @@ export function initSettings({ ws, state }) {
     document.getElementById('btn-reset').addEventListener('click', async () => {
         if (!confirm('This will delete all runtime data (state, memory, logs, settings) and restart.\nThe repo (agent code) will be preserved.\nYou will need to re-enter your API key.\n\nContinue?')) return;
         try {
-            const res = await fetch('/api/reset', { method: 'POST' });
+            const res = await fetch(apiUrl('/api/reset'), { method: 'POST' });
             const data = await res.json();
             if (data.status === 'ok') {
                 alert('Deleted: ' + (data.deleted.join(', ') || 'nothing') + '\nRestarting...');

@@ -23,8 +23,10 @@ from ouroboros.compat import pid_lock_release as _compat_pid_lock_release
 # ---------------------------------------------------------------------------
 HOME = pathlib.Path.home()
 APP_ROOT = HOME / "Ouroboros"
-REPO_DIR = APP_ROOT / "repo"
-DATA_DIR = APP_ROOT / "data"
+_repo_dir_env = os.environ.get("OUROBOROS_REPO_DIR", "").strip()
+_data_dir_env = os.environ.get("OUROBOROS_DATA_DIR", "").strip()
+REPO_DIR = pathlib.Path(_repo_dir_env).expanduser() if _repo_dir_env else (APP_ROOT / "repo")
+DATA_DIR = pathlib.Path(_data_dir_env).expanduser() if _data_dir_env else (APP_ROOT / "data")
 SETTINGS_PATH = DATA_DIR / "settings.json"
 PID_FILE = APP_ROOT / "ouroboros.pid"
 PORT_FILE = DATA_DIR / "state" / "server_port"

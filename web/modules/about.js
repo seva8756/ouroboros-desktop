@@ -1,4 +1,5 @@
 import { formatDualVersion } from './utils.js';
+import { apiUrl, withPrefix } from './path.js';
 
 export function initAbout({ ws, state }) {
     const page = document.createElement('div');
@@ -10,7 +11,7 @@ export function initAbout({ ws, state }) {
             <h2>About</h2>
         </div>
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:24px;padding:40px 20px;text-align:center">
-            <img src="/static/logo.jpg" style="width:96px;height:96px;border-radius:20px;object-fit:cover" alt="Ouroboros">
+            <img src="${withPrefix('/static/logo.png')}" style="width:96px;height:96px;border-radius:20px;object-fit:cover" alt="Ouroboros">
             <div>
                 <h1 style="font-size:28px;font-weight:700;margin:0">Ouroboros</h1>
                 <p id="about-version" style="color:var(--text-muted);font-size:13px;margin:4px 0 0"></p>
@@ -31,7 +32,7 @@ export function initAbout({ ws, state }) {
         </div>
     `;
     document.getElementById('content').appendChild(page);
-    fetch('/api/health').then(r => r.json()).then(d => {
+    fetch(apiUrl('/api/health')).then(r => r.json()).then(d => {
         document.getElementById('about-version').textContent = formatDualVersion(d);
     }).catch(() => {});
 }

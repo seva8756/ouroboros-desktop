@@ -37,6 +37,12 @@ REPO_DIR = pathlib.Path(os.environ.get("OUROBOROS_REPO_DIR", pathlib.Path(__file
 DATA_DIR = pathlib.Path(os.environ.get("OUROBOROS_DATA_DIR",
     pathlib.Path.home() / "Ouroboros" / "data"))
 PORT = int(os.environ.get("OUROBOROS_SERVER_PORT", "8765"))
+BIND_HOST = os.environ.get("OUROBOROS_SERVER_HOST", "127.0.0.1").strip() or "127.0.0.1"
+PATH_PREFIX = os.environ.get("OUROBOROS_PATH_PREFIX", "").strip()
+if PATH_PREFIX and not PATH_PREFIX.startswith("/"):
+    PATH_PREFIX = "/" + PATH_PREFIX
+if PATH_PREFIX.endswith("/") and len(PATH_PREFIX) > 1:
+    PATH_PREFIX = PATH_PREFIX.rstrip("/")
 
 sys.path.insert(0, str(REPO_DIR))
 
@@ -125,6 +131,18 @@ from ouroboros.server_runtime import has_local_routing, setup_remote_if_configur
 _supervisor_ready = threading.Event()
 _supervisor_error: Optional[str] = None
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _load_effective_settings() -> dict:
+    """Load persisted settings and fill secret values from env when absent."""
+    settings = load_settings()
+    # Keep ConfigMap/ENV secrets visible in UI and preserve them on save.
+    for key in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN"):
+        if not settings.get(key):
+            env_val = os.environ.get(key, "").strip()
+            if env_val:
+                settings[key] = env_val
+    return settings
 
 
 def _run_supervisor(settings: dict) -> None:
@@ -547,7 +565,7 @@ async def api_state(request: Request) -> JSONResponse:
 
 
 async def api_settings_get(request: Request) -> JSONResponse:
-    settings = load_settings()
+    settings = _load_effective_settings()
     safe = {k: v for k, v in settings.items()}
     for key in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN"):
         if safe.get(key):
@@ -558,7 +576,7 @@ async def api_settings_get(request: Request) -> JSONResponse:
 async def api_settings_post(request: Request) -> JSONResponse:
     try:
         body = await request.json()
-        current = load_settings()
+        current = _load_effective_settings()
         for key in _SETTINGS_DEFAULTS:
             if key in body:
                 current[key] = body[key]
@@ -861,25 +879,25 @@ class NoCacheStaticFiles:
             await self._app(scope, receive, send)
 
 routes = [
-    Route("/", endpoint=index_page),
-    Route("/api/health", endpoint=api_health),
-    Route("/api/state", endpoint=api_state),
-    Route("/api/settings", endpoint=api_settings_get, methods=["GET"]),
-    Route("/api/settings", endpoint=api_settings_post, methods=["POST"]),
-    Route("/api/command", endpoint=api_command, methods=["POST"]),
-    Route("/api/reset", endpoint=api_reset, methods=["POST"]),
-    Route("/api/git/log", endpoint=api_git_log),
-    Route("/api/git/rollback", endpoint=api_git_rollback, methods=["POST"]),
-    Route("/api/git/promote", endpoint=api_git_promote, methods=["POST"]),
-    Route("/api/cost-breakdown", endpoint=api_cost_breakdown),
-    Route("/api/evolution-data", endpoint=api_evolution_data),
-    Route("/api/chat/history", endpoint=api_chat_history),
-    Route("/api/local-model/start", endpoint=api_local_model_start, methods=["POST"]),
-    Route("/api/local-model/stop", endpoint=api_local_model_stop, methods=["POST"]),
-    Route("/api/local-model/status", endpoint=api_local_model_status),
-    Route("/api/local-model/test", endpoint=api_local_model_test, methods=["POST"]),
-    WebSocketRoute("/ws", endpoint=ws_endpoint),
-    Mount("/static", app=NoCacheStaticFiles(directory=str(web_dir)), name="static"),
+    Route(f"{PATH_PREFIX}/", endpoint=index_page),
+    Route(f"{PATH_PREFIX}/api/health", endpoint=api_health),
+    Route(f"{PATH_PREFIX}/api/state", endpoint=api_state),
+    Route(f"{PATH_PREFIX}/api/settings", endpoint=api_settings_get, methods=["GET"]),
+    Route(f"{PATH_PREFIX}/api/settings", endpoint=api_settings_post, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/command", endpoint=api_command, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/reset", endpoint=api_reset, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/git/log", endpoint=api_git_log),
+    Route(f"{PATH_PREFIX}/api/git/rollback", endpoint=api_git_rollback, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/git/promote", endpoint=api_git_promote, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/cost-breakdown", endpoint=api_cost_breakdown),
+    Route(f"{PATH_PREFIX}/api/evolution-data", endpoint=api_evolution_data),
+    Route(f"{PATH_PREFIX}/api/chat/history", endpoint=api_chat_history),
+    Route(f"{PATH_PREFIX}/api/local-model/start", endpoint=api_local_model_start, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/local-model/stop", endpoint=api_local_model_stop, methods=["POST"]),
+    Route(f"{PATH_PREFIX}/api/local-model/status", endpoint=api_local_model_status),
+    Route(f"{PATH_PREFIX}/api/local-model/test", endpoint=api_local_model_test, methods=["POST"]),
+    WebSocketRoute(f"{PATH_PREFIX}/ws", endpoint=ws_endpoint),
+    Mount(f"{PATH_PREFIX}/static", app=NoCacheStaticFiles(directory=str(web_dir)), name="static"),
 ]
 
 from contextlib import asynccontextmanager, suppress
@@ -894,7 +912,7 @@ async def lifespan(app):
         name="ws-heartbeat",
     )
 
-    settings = load_settings()
+    settings = _load_effective_settings()
     has_api_key = bool(settings.get("OPENROUTER_API_KEY"))
     has_local = has_local_routing(settings)
 
@@ -952,7 +970,7 @@ def _find_free_port(start: int = 8765, max_tries: int = 10) -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            s.bind(("127.0.0.1", start))
+            s.bind((BIND_HOST, start))
             return start
         except OSError:
             pass
@@ -960,7 +978,7 @@ def _find_free_port(start: int = 8765, max_tries: int = 10) -> int:
         port = start + offset
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("127.0.0.1", port))
+                s.bind((BIND_HOST, port))
             return port
         except OSError:
             continue
@@ -983,7 +1001,7 @@ if __name__ == "__main__":
     log.info("Starting Ouroboros server on port %d", actual_port)
     config = uvicorn.Config(
         app,
-        host="127.0.0.1",
+        host=BIND_HOST,
         port=actual_port,
         log_level="warning",
         ws_ping_interval=20,

@@ -1,3 +1,5 @@
+import { apiUrl } from './path.js';
+
 export function initCosts({ ws, state }) {
     const page = document.createElement('div');
     page.id = 'page-costs';
@@ -60,7 +62,7 @@ export function initCosts({ ws, state }) {
 
     async function loadCosts() {
         try {
-            const resp = await fetch('/api/cost-breakdown');
+            const resp = await fetch(apiUrl('/api/cost-breakdown'));
             const d = await resp.json();
             document.getElementById('cost-total').textContent = '$' + (d.total_cost || 0).toFixed(2);
             document.getElementById('cost-calls').textContent = d.total_calls || 0;
